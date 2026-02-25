@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Energy Consumption Topology — Demo</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css"
+  />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --card-bg: #1c1c1e;
+      --text-primary: #e0e0e0;
+      --text-secondary: #aaa;
+      --card-radius: 12px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+      background: #121212;
+      color: var(--text-primary);
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+      min-height: 100vh;
+    }
+    .ha-card {
+      background: var(--card-bg);
+      border-radius: var(--card-radius);
+      width: 100%;
+      max-width: 800px;
+      padding: 24px 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.6);
+    }
+    .topology { display: flex; flex-direction: column; align-items: stretch; }
+    .row { display: flex; justify-content: space-around; align-items: flex-start; gap: 8px; flex-shrink: 0; }
+    .node-wrapper { display: flex; flex-direction: column; align-items: center; flex: 1 1 0; min-width: 0; }
+    .node-name { font-size: 0.82em; font-weight: 500; text-align: center; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: var(--text-secondary); }
+    .node-circle {
+      width: 64px; height: 64px; border-radius: 50%; border: 2.5px solid;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; background: var(--card-bg); flex-shrink: 0; transition: transform 0.12s ease;
+    }
+    .node-circle.clickable { cursor: pointer; }
+    .node-circle.clickable:active { transform: scale(0.93); }
+    .node-circle .icon { font-size: 22px; line-height: 1; }
+    .node-power { font-size: 0.68em; font-weight: 600; line-height: 1; color: var(--text-primary); }
+    .connectors { width: 100%; display: block; flex-shrink: 0; }
+    .info-banner { text-align: center; font-size: .75em; color: var(--text-secondary); margin-top: 20px; opacity: .6; }
+  </style>
+</head>
+<body>
+
+<div class="ha-card" id="card"></div>
+
+<script>
+/* ================================================================== */
+/*  Config                                                             */
+/* ================================================================== */
+const CONFIG = {
+  bubbles: {
+    "min-speed": { "power-equivalent": "10W", value: "1%" },
+    "max-speed": { "power-equivalent": "1000W", value: "100%" },
+  },
+  root: {
+    id: "grid",
+    entity: "sensor.power_meter_main_power",
+    name: "Grid",
+    color: "#00bcd4",
+    icon: "mdi:transmission-tower",
+  },
+  layer0: [
+    { entity: "sensor.power_meter_primary_rail_apparent_power", id: "primary-rail", parent: "grid", name: "Primary", color: "#00bcd4", icon: "mdi:lightning-bolt" },
+    { entity: "sensor.power_meter_kitchen_power",  id: "kitchen",      parent: "grid", name: "Kitchen",  color: "#00bcd4", icon: "mdi:countertop-outline" },
+    { entity: "sensor.power_meter_toilet_power",   id: "toilet",       parent: "grid", name: "Toilet",   color: "#00bcd4", icon: "mdi:toilet" },
+    { entity: "sensor.shellypro2pm_basement_power", id: "basement",    parent: "grid", name: "Basement", color: "#00bcd4", icon: "mdi:car" },
+    { entity: "sensor.shellypro2pm_ec62608c715c_switch_1_power", id: "light-strips", parent: "grid", name: "Strips", color: "#00bcd4", icon: "mdi:led-strip" },
+  ],
+  layer1: [
+    { entity: "sensor.power_usage_bulbs", id: "lights", parent: "primary-rail", name: "Lights", color: "#ffc107", icon: "mdi:lightbulb-on" },
+  ],
+  layer2: [
+    { entity: "sensor.power_usage_bedroom",  id: "light_bedroom",  parent: "lights", name: "Bedroom light", color: "#ffc107", icon: "mdi:bed",  type: "light" },
+    { entity: "sensor.power_usage_bathroom", id: "light_bathroom", parent: "lights", name: "Bathroom",      color: "#ffc107", icon: "mdi:bathtub", type: "light" },
+    { entity: "sensor.power_usage_hallway",  id: "light_hallway",  parent: "lights", name: "Hallway",       color: "#ffc107", icon: "mdi:lightbulb-on", type: "light" },
+    { entity: "sensor.power_usage_living",   id: "light_living",   parent: "lights", name: "Living room",   color: "#ffc107", icon: "mdi:sofa",  type: "light" },
+    { entity: "sensor.power_usage_office",   id: "light_office",   parent: "lights", name: "Office",        color: "#ffc107", icon: "mdi:desk",  type: "light" },
+    { id: "lights_other", parent: "lights", name: "Other lights", color: "#ffc107", icon: "mdi:dots-horizontal", type: "other" },
+  ],
+};
+
+/* ================================================================== */
+/*  Fake states                                                        */
+/* ================================================================== */
+const FAKE = {
+  "sensor.power_meter_main_power": 532,
+  "sensor.power_meter_primary_rail_apparent_power": 560,
+  "sensor.power_meter_kitchen_power": 33,
+  "sensor.power_meter_toilet_power": 2,
+  "sensor.shellypro2pm_basement_power": null,
+  "sensor.shellypro2pm_ec62608c715c_switch_1_power": 11,
+  "sensor.power_usage_bulbs": 66,
+  "sensor.power_usage_bedroom": 0,
+  "sensor.power_usage_bathroom": 0,
+  "sensor.power_usage_hallway": 0,
+  "sensor.power_usage_living": 66,
+  "sensor.power_usage_office": 0,
+};
+
+/* ================================================================== */
+/*  Helpers                                                            */
+/* ================================================================== */
+const SVG_H = 80;
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function parsePE(s) { if (typeof s==="number") return s; const v=String(s).trim().toLowerCase(); const n=parseFloat(v); return v.endsWith("kw")?n*1000:n; }
+function parsePct(s) { return typeof s==="number"?s:parseFloat(String(s))/100; }
+function safePower(v) { if(v===null||v===undefined) return 0; const n=Number(v); return isNaN(n)?0:n; }
+function formatPower(v) {
+  if (v==null||isNaN(v)) return "-- W";
+  if (Math.abs(v)>=1000) return `${(v/1000).toFixed(1)} kW`;
+  return `${Math.round(v)} W`;
+}
+function mdiClass(icon) {
+  if (!icon) return "mdi mdi-lightning-bolt";
+  return "mdi " + icon.replace(":", " ").replace("mdi ", "mdi-");
+}
+function resolveIcon(node, power) {
+  if (node.type==="light") { return safePower(power)>0?"mdi:lightbulb-on":"mdi:lightbulb"; }
+  if (node.type==="other") return node.icon||"mdi:dots-horizontal";
+  return node.icon||"mdi:lightning-bolt";
+}
+
+const bub = CONFIG.bubbles||{};
+const BC = {
+  minP: parsePE((bub["min-speed"]||{})["power-equivalent"]||"100W"),
+  maxP: parsePE((bub["max-speed"]||{})["power-equivalent"]||"5000W"),
+  minS: parsePct((bub["min-speed"]||{}).value||"10%"),
+  maxS: parsePct((bub["max-speed"]||{}).value||"100%"),
+};
+function powerToSpeed(p) {
+  const t = clamp((Math.abs(p)-BC.minP)/(BC.maxP-BC.minP),0,1);
+  return BC.minS + t*(BC.maxS-BC.minS);
+}
+
+/* ================================================================== */
+/*  Build tree                                                         */
+/* ================================================================== */
+const root = { ...CONFIG.root, icon: CONFIG.root.icon||"mdi:lightning-bolt", color: CONFIG.root.color||"#4caf50" };
+const LAYERS = [];
+const nodeMap = new Map();
+nodeMap.set(root.id, root);
+
+for (let i=0;i<4;i++) {
+  const raw = CONFIG[`layer${i}`];
+  if (!raw||!raw.length) { LAYERS.push([]); continue; }
+  LAYERS.push(raw.map(n => {
+    const isOther = n.type==="other";
+    const node = { ...n, icon:n.icon||(isOther?"mdi:dots-horizontal":"mdi:lightning-bolt"), color:n.color||"#4caf50", name:n.name||(isOther?"Other":n.entity.replace(/^sensor\./,"")), type:n.type||null, _layerIdx:i };
+    nodeMap.set(node.id, node);
+    return node;
+  }));
+}
+
+/** Get power for a node (handles "other" computed type). */
+function getNodePower(node) {
+  if (node.type==="other") {
+    const parent = nodeMap.get(node.parent);
+    if (!parent) return 0;
+    const parentPow = safePower(getNodePower(parent));
+    const layer = LAYERS[node._layerIdx]||[];
+    let sibSum = 0;
+    for (const sib of layer) {
+      if (sib.type==="other"||sib.parent!==node.parent) continue;
+      sibSum += safePower(getNodePower(sib));
+    }
+    const rem = parentPow - sibSum;
+    return rem>0?rem:0;
+  }
+  const raw = FAKE[node.entity];
+  return raw!==null&&raw!==undefined?safePower(raw):null;
+}
+
+/* ================================================================== */
+/*  Render                                                             */
+/* ================================================================== */
+function renderNode(node) {
+  const pv = getNodePower(node);
+  const icon = resolveIcon(node, pv);
+  const hasEntity = !!node.entity;
+  return `
+    <div class="node-wrapper">
+      <div class="node-name">${node.name}</div>
+      <div class="node-circle ${hasEntity?'clickable':''}" style="border-color:${node.color};">
+        <span class="icon ${mdiClass(icon)}" style="color:${node.color};"></span>
+        <span class="node-power">${formatPower(pv)}</span>
+      </div>
+    </div>`;
+}
+function renderRow(nodes) { return `<div class="row">${nodes.map(renderNode).join("")}</div>`; }
+
+function renderConnectors(parentRow, childRow, pairIdx) {
+  const cardEl = document.getElementById("card");
+  const w = cardEl?(cardEl.clientWidth-32):750;
+  const h = SVG_H;
+  const cx = (i,t) => ((i+0.5)/t)*w;
+
+  let paths = "";
+  for (let ci=0;ci<childRow.length;ci++) {
+    const child = childRow[ci];
+    const pNode = nodeMap.get(child.parent);
+    if (!pNode) continue;
+    const pi = parentRow.indexOf(pNode);
+    if (pi===-1) continue;
+
+    const x1=cx(pi,parentRow.length), x2=cx(ci,childRow.length);
+    const cy1=h*0.4, cy2=h*0.6;
+    const pathId=`p-${pairIdx}-${ci}`;
+    const color=pNode.color;
+
+    const power = Math.abs(safePower(getNodePower(child)));
+    const speed = powerToSpeed(power);
+    const dur = power===0 ? 0 : (8-7*speed);
+
+    paths+=`<path id="${pathId}" d="M ${x1} 0 C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${h}" fill="none" stroke="${color}" stroke-width="1.5" stroke-opacity="0.45"/>`;
+    if (dur>0) {
+      for (let b=0;b<3;b++) {
+        const begin=(dur*b*0.33).toFixed(2);
+        paths+=`<circle r="4" fill="${color}" opacity="0.9"><animateMotion dur="${dur.toFixed(2)}s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear" begin="${begin}s"><mpath href="#${pathId}"/></animateMotion></circle>`;
+      }
+    }
+  }
+  return `<svg class="connectors" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths}</svg>`;
+}
+
+function buildCard() {
+  const allRows = [[root],...LAYERS.filter(l=>l.length)];
+  let out = '<div class="topology">';
+  for (let r=0;r<allRows.length;r++) {
+    out += renderRow(allRows[r]);
+    if (r<allRows.length-1) out += renderConnectors(allRows[r],allRows[r+1],r);
+  }
+  out += '</div><div class="info-banner">Energy Consumption Topology v1.2.0 — standalone demo</div>';
+  document.getElementById("card").innerHTML = out;
+}
+buildCard();
+window.addEventListener("resize", buildCard);
+</script>
+</body>
+</html>

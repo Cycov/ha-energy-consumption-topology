@@ -1,0 +1,33 @@
+{
+  "name": "energy-consumption-topology",
+  "version": "1.0.0",
+  "description": "A Home Assistant Lovelace card that displays energy consumption as a vertical topology tree",
+  "main": "dist/energy-consumption-topology.js",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c --watch",
+    "lint": "eslint src/**/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/energy-consumption-topology"
+  },
+  "keywords": [
+    "home-assistant",
+    "lovelace",
+    "custom-card",
+    "energy",
+    "topology",
+    "hacs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^4.9.0"
+  },
+  "dependencies": {
+    "lit": "^3.1.0"
+  }
+}
