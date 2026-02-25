@@ -9,9 +9,10 @@ import {
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.3.0";
 const MAX_LAYERS = 4; // layer0 … layer3
-const SVG_CONNECTOR_HEIGHT = 80; // px - height of the bezier zone between rows
+const SVG_CONNECTOR_HEIGHT = 80; // px – height of the bezier zone between rows
+const SVG_CONNECTOR_WIDTH = 80; // px – width of the bezier zone between columns (horizontal mode)
 
 const DEFAULT_ICON = "mdi:lightning-bolt";
 const COLOR_PALETTE = [
@@ -106,6 +107,7 @@ class EnergyConsumptionTopology extends LitElement {
   setConfig(config) {
     if (!config.root) throw new Error("You must define a root node");
     this._config = config;
+    this._layout = config.layout || "vertical"; // "vertical" | "horizontal"
     this._errors = [];
     this._buildTree();
   }
@@ -134,9 +136,9 @@ class EnergyConsumptionTopology extends LitElement {
     this._ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
-        if (w > 0 && w !== this._containerWidth) {
-          this._containerWidth = w;
-        }
+        const h = entry.contentRect.height;
+        if (w > 0 && w !== this._containerWidth) this._containerWidth = w;
+        if (h > 0 && h !== this._containerHeight) this._containerHeight = h;
       }
     });
     this._ro.observe(target);
@@ -149,6 +151,16 @@ class EnergyConsumptionTopology extends LitElement {
 
   getCardSize() {
     return 6;
+  }
+
+  getGridOptions() {
+    const go = (this._config && this._config.grid_options) || {};
+    return {
+      rows: go.rows || 5,
+      columns: go.columns || 12,
+      min_rows: go.min_rows || go.rows || 5,
+      min_columns: go.min_columns || go.columns || 6,
+    };
   }
 
   static getStubConfig() {
@@ -230,7 +242,7 @@ class EnergyConsumptionTopology extends LitElement {
       }
       const layerNodes = [];
       const currentLayerIds = new Set();
-      let otherCount = 0;
+      const otherPerParent = new Set(); // track one "other" per parent
       for (const n of raw) {
         const isOther = n.type === "other";
         if (!n.id) {
@@ -256,13 +268,13 @@ class EnergyConsumptionTopology extends LitElement {
           continue;
         }
         if (isOther) {
-          otherCount++;
-          if (otherCount > 1) {
+          if (otherPerParent.has(n.parent)) {
             this._errors.push(
-              `Only one node of type 'other' is allowed per layer (${key})`
+              `Only one node of type 'other' is allowed per parent – parent '${n.parent}' in ${key} already has one`
             );
             continue;
           }
+          otherPerParent.add(n.parent);
         }
 
         ids.add(n.id);
@@ -315,9 +327,11 @@ class EnergyConsumptionTopology extends LitElement {
       ? this._layers.filter((l) => l.length > 0)
       : [];
 
+    const isHorizontal = this._layout === "horizontal";
+
     return html`
       <ha-card>
-        <div class="card-content">
+        <div class="card-content ${isHorizontal ? 'horizontal' : 'vertical'}">
           ${this._root ? this._renderTopology(visibleLayers) : ""}
         </div>
       </ha-card>
@@ -374,15 +388,20 @@ class EnergyConsumptionTopology extends LitElement {
 
   _renderTopology(visibleLayers) {
     const allRows = [[this._root], ...visibleLayers];
+    const isHorizontal = this._layout === "horizontal";
 
     const parts = [];
     for (let r = 0; r < allRows.length; r++) {
       parts.push(this._renderRow(allRows[r], r));
       if (r < allRows.length - 1) {
-        parts.push(this._renderConnectors(allRows[r], allRows[r + 1], r));
+        parts.push(
+          isHorizontal
+            ? this._renderHorizontalConnectors(allRows[r], allRows[r + 1], r)
+            : this._renderConnectors(allRows[r], allRows[r + 1], r)
+        );
       }
     }
-    return html`<div class="topology">${parts}</div>`;
+    return html`<div class="topology ${isHorizontal ? 'horizontal' : ''}">${parts}</div>`;
   }
 
   _renderRow(nodes, rowIndex) {
@@ -393,6 +412,13 @@ class EnergyConsumptionTopology extends LitElement {
     `;
   }
 
+  _renderNodeName(node) {
+    const isHorizontal = this._layout === "horizontal";
+    return isHorizontal
+      ? html`<div class="node-name-h">${node.name}</div>`
+      : html`<div class="node-name">${node.name}</div>`;
+  }
+
   _renderNode(node) {
     const powerVal = this._getNodePower(node);
     const power = this._formatPower(powerVal);
@@ -400,7 +426,7 @@ class EnergyConsumptionTopology extends LitElement {
     const hasEntity = !!node.entity;
     return html`
       <div class="node-wrapper">
-        <div class="node-name">${node.name}</div>
+        ${this._renderNodeName(node)}
         <div
           class="node-circle ${hasEntity ? 'clickable' : ''}"
           style="border-color: ${node.color};"
@@ -507,6 +533,87 @@ class EnergyConsumptionTopology extends LitElement {
     `;
   }
 
+  /* ---------------------------------------------------------------- */
+  /*  Horizontal connectors                                           */
+  /* ---------------------------------------------------------------- */
+
+  _renderHorizontalConnectors(parentRow, childRow, pairIndex) {
+    const h = this._containerHeight || 400;
+    const w = SVG_CONNECTOR_WIDTH;
+    const parentCount = parentRow.length;
+    const childCount = childRow.length;
+
+    /* Centre-y of node idx in a column of `total` items. */
+    const cy = (idx, total) => ((idx + 0.5) / total) * h;
+
+    const lines = [];
+    for (let ci = 0; ci < childCount; ci++) {
+      const child = childRow[ci];
+      const parentNode = this._nodeMap.get(child.parent);
+      if (!parentNode) continue;
+      const pi = parentRow.indexOf(parentNode);
+      if (pi === -1) continue;
+
+      const y1 = cy(pi, parentCount);
+      const y2 = cy(ci, childCount);
+
+      const cx1 = w * 0.4;
+      const cx2 = w * 0.6;
+
+      const power = Math.abs(safePower(this._getNodePower(child)));
+      const speed = powerToSpeed(power, this._bubbleCfg);
+      const duration = power === 0 ? 0 : 8 - 7 * speed;
+
+      const pathId = `hp${pairIndex}-${ci}`;
+      const lineColor = parentNode.color;
+
+      lines.push(svg`
+        <path
+          id="${pathId}"
+          d="M 0 ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${w} ${y2}"
+          fill="none"
+          stroke="${lineColor}"
+          stroke-width="1.5"
+          stroke-opacity="0.45"
+        />
+        ${duration > 0
+          ? svg`
+            <circle r="4" fill="${lineColor}" opacity="0.9">
+              <animateMotion dur="${duration}s" repeatCount="indefinite"
+                keyPoints="0;1" keyTimes="0;1" calcMode="linear">
+                <mpath href="#${pathId}" />
+              </animateMotion>
+            </circle>
+            <circle r="4" fill="${lineColor}" opacity="0.9">
+              <animateMotion dur="${duration}s" repeatCount="indefinite"
+                keyPoints="0;1" keyTimes="0;1" calcMode="linear"
+                begin="${(duration * 0.33).toFixed(2)}s">
+                <mpath href="#${pathId}" />
+              </animateMotion>
+            </circle>
+            <circle r="4" fill="${lineColor}" opacity="0.9">
+              <animateMotion dur="${duration}s" repeatCount="indefinite"
+                keyPoints="0;1" keyTimes="0;1" calcMode="linear"
+                begin="${(duration * 0.66).toFixed(2)}s">
+                <mpath href="#${pathId}" />
+              </animateMotion>
+            </circle>`
+          : ""}
+      `);
+    }
+
+    return svg`
+      <svg
+        class="connectors-h"
+        width="${w}"
+        height="${h}"
+        viewBox="0 0 ${w} ${h}"
+      >
+        ${lines}
+      </svg>
+    `;
+  }
+
   /* ---------- styles ---------- */
 
   static get styles() {
@@ -536,20 +643,42 @@ class EnergyConsumptionTopology extends LitElement {
         padding-left: 20px;
       }
 
-      /* topology */
+      /* topology – vertical (default) */
       .topology {
         display: flex;
         flex-direction: column;
         align-items: stretch;
       }
 
-      /* rows */
+      /* topology – horizontal */
+      .topology.horizontal {
+        flex-direction: row;
+        align-items: stretch;
+      }
+
+      .card-content.horizontal {
+        overflow-x: auto;
+      }
+
+      /* rows (vertical) */
       .row {
         display: flex;
         justify-content: space-around;
         align-items: flex-start;
         gap: 8px;
         flex-shrink: 0;
+      }
+
+      /* rows (horizontal) – each "row" is actually a column */
+      .topology.horizontal > .row {
+        flex-direction: column;
+        justify-content: space-around;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .topology.horizontal > .row > .node-wrapper {
+        flex: 0 0 auto;
       }
 
       /* node */
@@ -577,6 +706,18 @@ class EnergyConsumptionTopology extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 100%;
+        color: var(--primary-text-color, #e0e0e0);
+      }
+
+      .node-name-h {
+        font-size: 0.82em;
+        font-weight: 500;
+        text-align: center;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 80px;
         color: var(--primary-text-color, #e0e0e0);
       }
 
@@ -610,9 +751,15 @@ class EnergyConsumptionTopology extends LitElement {
         color: var(--primary-text-color, #e0e0e0);
       }
 
-      /* connector SVG between rows */
+      /* connector SVG between rows (vertical) */
       .connectors {
         width: 100%;
+        display: block;
+        flex-shrink: 0;
+      }
+
+      /* connector SVG between columns (horizontal) */
+      .connectors-h {
         display: block;
         flex-shrink: 0;
       }

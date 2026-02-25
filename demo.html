@@ -47,7 +47,19 @@
     .node-circle .icon { font-size: 22px; line-height: 1; }
     .node-power { font-size: 0.68em; font-weight: 600; line-height: 1; color: var(--text-primary); }
     .connectors { width: 100%; display: block; flex-shrink: 0; }
+    .connectors-h { display: block; flex-shrink: 0; }
     .info-banner { text-align: center; font-size: .75em; color: var(--text-secondary); margin-top: 20px; opacity: .6; }
+
+    /* horizontal layout overrides */
+    .topology.horizontal { flex-direction: row; align-items: stretch; }
+    .topology.horizontal > .row { flex-direction: column; justify-content: space-around; align-items: center; flex-shrink: 0; }
+    .topology.horizontal > .row > .node-wrapper { flex: 0 0 auto; }
+    .node-name-h { font-size: 0.82em; font-weight: 500; text-align: center; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; color: var(--text-secondary); }
+
+    /* toggle switch */
+    .toggle-bar { display: flex; justify-content: flex-end; margin-bottom: 12px; gap: 8px; align-items: center; }
+    .toggle-bar label { font-size: 0.85em; color: var(--text-secondary); cursor: pointer; }
+    .toggle-bar input { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -71,22 +83,25 @@ const CONFIG = {
     icon: "mdi:transmission-tower",
   },
   layer0: [
-    { entity: "sensor.power_meter_primary_rail_apparent_power", id: "primary-rail", parent: "grid", name: "Primary", color: "#00bcd4", icon: "mdi:lightning-bolt" },
     { entity: "sensor.power_meter_kitchen_power",  id: "kitchen",      parent: "grid", name: "Kitchen",  color: "#00bcd4", icon: "mdi:countertop-outline" },
     { entity: "sensor.power_meter_toilet_power",   id: "toilet",       parent: "grid", name: "Toilet",   color: "#00bcd4", icon: "mdi:toilet" },
+    { entity: "sensor.power_meter_primary_rail_power", id: "primary-rail", parent: "grid", name: "Primary", color: "#00bcd4", icon: "mdi:lightning-bolt" },
     { entity: "sensor.shellypro2pm_basement_power", id: "basement",    parent: "grid", name: "Basement", color: "#00bcd4", icon: "mdi:car" },
     { entity: "sensor.shellypro2pm_ec62608c715c_switch_1_power", id: "light-strips", parent: "grid", name: "Strips", color: "#00bcd4", icon: "mdi:led-strip" },
+    { type: "other", id: "other-1", parent: "grid", name: "Other", icon: "mdi:lightning-bolt", color: "#00bcd4" },
   ],
   layer1: [
-    { entity: "sensor.power_usage_bulbs", id: "lights", parent: "primary-rail", name: "Lights", color: "#ffc107", icon: "mdi:lightbulb-on" },
+    { entity: "sensor.shelly_plug_bedroom_power", id: "plug-bedroom", parent: "primary-rail", name: "Bedroom plug", icon: "mdi:power-plug", color: "#00bcd4" },
+    { entity: "sensor.power_usage_bulbs", id: "lights", parent: "primary-rail", name: "Lights", color: "#ffc107", type: "light" },
+    { entity: "sensor.shellyplugsg3_28372f370f64_power", id: "plug-living", parent: "primary-rail", name: "Living room plug", icon: "mdi:power-plug", color: "#00bcd4" },
+    { type: "other", id: "other-2", parent: "primary-rail", name: "Other", icon: "mdi:lightning-bolt", color: "#00bcd4" },
   ],
   layer2: [
-    { entity: "sensor.power_usage_bedroom",  id: "light_bedroom",  parent: "lights", name: "Bedroom light", color: "#ffc107", icon: "mdi:bed",  type: "light" },
-    { entity: "sensor.power_usage_bathroom", id: "light_bathroom", parent: "lights", name: "Bathroom",      color: "#ffc107", icon: "mdi:bathtub", type: "light" },
-    { entity: "sensor.power_usage_hallway",  id: "light_hallway",  parent: "lights", name: "Hallway",       color: "#ffc107", icon: "mdi:lightbulb-on", type: "light" },
-    { entity: "sensor.power_usage_living",   id: "light_living",   parent: "lights", name: "Living room",   color: "#ffc107", icon: "mdi:sofa",  type: "light" },
-    { entity: "sensor.power_usage_office",   id: "light_office",   parent: "lights", name: "Office",        color: "#ffc107", icon: "mdi:desk",  type: "light" },
-    { id: "lights_other", parent: "lights", name: "Other lights", color: "#ffc107", icon: "mdi:dots-horizontal", type: "other" },
+    { entity: "sensor.power_usage_bedroom",  id: "light_bedroom",  parent: "lights", name: "Bedroom light", color: "#ffc107", icon: "mdi:bed" },
+    { entity: "sensor.power_usage_bathroom", id: "light_bathroom", parent: "lights", name: "Bathroom",      color: "#ffc107", icon: "mdi:bathtub" },
+    { entity: "sensor.power_usage_hallway",  id: "light_hallway",  parent: "lights", name: "Hallway",       color: "#ffc107", icon: "mdi:lightbulb-on" },
+    { entity: "sensor.power_usage_living",   id: "light_living",   parent: "lights", name: "Living room",   color: "#ffc107", icon: "mdi:sofa" },
+    { entity: "sensor.power_usage_office",   id: "light_office",   parent: "lights", name: "Office",        color: "#ffc107", icon: "mdi:desk" },
   ],
 };
 
@@ -95,12 +110,14 @@ const CONFIG = {
 /* ================================================================== */
 const FAKE = {
   "sensor.power_meter_main_power": 532,
-  "sensor.power_meter_primary_rail_apparent_power": 560,
   "sensor.power_meter_kitchen_power": 33,
   "sensor.power_meter_toilet_power": 2,
+  "sensor.power_meter_primary_rail_power": 380,
   "sensor.shellypro2pm_basement_power": null,
   "sensor.shellypro2pm_ec62608c715c_switch_1_power": 11,
+  "sensor.shelly_plug_bedroom_power": 45,
   "sensor.power_usage_bulbs": 66,
+  "sensor.shellyplugsg3_28372f370f64_power": 120,
   "sensor.power_usage_bedroom": 0,
   "sensor.power_usage_bathroom": 0,
   "sensor.power_usage_hallway": 0,
@@ -112,6 +129,8 @@ const FAKE = {
 /*  Helpers                                                            */
 /* ================================================================== */
 const SVG_H = 80;
+const SVG_W = 80;
+let currentLayout = "vertical";
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function parsePE(s) { if (typeof s==="number") return s; const v=String(s).trim().toLowerCase(); const n=parseFloat(v); return v.endsWith("kw")?n*1000:n; }
 function parsePct(s) { return typeof s==="number"?s:parseFloat(String(s))/100; }
@@ -184,20 +203,21 @@ function getNodePower(node) {
 /* ================================================================== */
 /*  Render                                                             */
 /* ================================================================== */
-function renderNode(node) {
+function renderNode(node, layout) {
   const pv = getNodePower(node);
   const icon = resolveIcon(node, pv);
   const hasEntity = !!node.entity;
+  const nameClass = layout==="horizontal" ? "node-name-h" : "node-name";
   return `
     <div class="node-wrapper">
-      <div class="node-name">${node.name}</div>
+      <div class="${nameClass}">${node.name}</div>
       <div class="node-circle ${hasEntity?'clickable':''}" style="border-color:${node.color};">
         <span class="icon ${mdiClass(icon)}" style="color:${node.color};"></span>
         <span class="node-power">${formatPower(pv)}</span>
       </div>
     </div>`;
 }
-function renderRow(nodes) { return `<div class="row">${nodes.map(renderNode).join("")}</div>`; }
+function renderRow(nodes, layout) { return `<div class="row">${nodes.map(n => renderNode(n, layout)).join("")}</div>`; }
 
 function renderConnectors(parentRow, childRow, pairIdx) {
   const cardEl = document.getElementById("card");
@@ -233,15 +253,76 @@ function renderConnectors(parentRow, childRow, pairIdx) {
   return `<svg class="connectors" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths}</svg>`;
 }
 
-function buildCard() {
-  const allRows = [[root],...LAYERS.filter(l=>l.length)];
-  let out = '<div class="topology">';
-  for (let r=0;r<allRows.length;r++) {
-    out += renderRow(allRows[r]);
-    if (r<allRows.length-1) out += renderConnectors(allRows[r],allRows[r+1],r);
+function renderHorizontalConnectors(parentRow, childRow, pairIdx, overrideH) {
+  const cardEl = document.getElementById("card");
+  const h = overrideH || (cardEl?(cardEl.clientHeight-64):400);
+  const w = SVG_W;
+  const cy = (i,t) => ((i+0.5)/t)*h;
+
+  let paths = "";
+  for (let ci=0;ci<childRow.length;ci++) {
+    const child = childRow[ci];
+    const pNode = nodeMap.get(child.parent);
+    if (!pNode) continue;
+    const pi = parentRow.indexOf(pNode);
+    if (pi===-1) continue;
+
+    const y1=cy(pi,parentRow.length), y2=cy(ci,childRow.length);
+    const cx1=w*0.4, cx2=w*0.6;
+    const pathId=`hp-${pairIdx}-${ci}`;
+    const color=pNode.color;
+
+    const power = Math.abs(safePower(getNodePower(child)));
+    const speed = powerToSpeed(power);
+    const dur = power===0 ? 0 : (8-7*speed);
+
+    paths+=`<path id="${pathId}" d="M 0 ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${w} ${y2}" fill="none" stroke="${color}" stroke-width="1.5" stroke-opacity="0.45"/>`;
+    if (dur>0) {
+      for (let b=0;b<3;b++) {
+        const begin=(dur*b*0.33).toFixed(2);
+        paths+=`<circle r="4" fill="${color}" opacity="0.9"><animateMotion dur="${dur.toFixed(2)}s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear" begin="${begin}s"><mpath href="#${pathId}"/></animateMotion></circle>`;
+      }
+    }
   }
-  out += '</div><div class="info-banner">Energy Consumption Topology v1.2.0 — standalone demo</div>';
+  return `<svg class="connectors-h" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths}</svg>`;
+}
+
+function buildCard() {
+  const isH = currentLayout==="horizontal";
+  const allRows = [[root],...LAYERS.filter(l=>l.length)];
+  let out = '<div class="toggle-bar"><label for="layoutToggle">Horizontal</label><input type="checkbox" id="layoutToggle"' + (isH?' checked':'') + '></div>';
+  out += `<div class="topology${isH?' horizontal':''}" id="topology">` ;
+  for (let r=0;r<allRows.length;r++) {
+    out += renderRow(allRows[r], currentLayout);
+    if (r<allRows.length-1) {
+      if (isH) {
+        // placeholder SVG — will re-render after measuring height
+        out += `<svg class="connectors-h" data-pair="${r}"></svg>`;
+      } else {
+        out += renderConnectors(allRows[r],allRows[r+1],r);
+      }
+    }
+  }
+  out += '</div><div class="info-banner">Energy Consumption Topology v1.3.0 \u2014 standalone demo</div>';
   document.getElementById("card").innerHTML = out;
+
+  // Second pass for horizontal: now the topology has a real height
+  if (isH) {
+    const topoEl = document.getElementById("topology");
+    const measuredH = topoEl ? topoEl.clientHeight : 400;
+    const placeholders = topoEl.querySelectorAll("svg.connectors-h[data-pair]");
+    placeholders.forEach((svg) => {
+      const pairIdx = parseInt(svg.dataset.pair, 10);
+      const parentRow = allRows[pairIdx];
+      const childRow = allRows[pairIdx + 1];
+      svg.outerHTML = renderHorizontalConnectors(parentRow, childRow, pairIdx, measuredH);
+    });
+  }
+
+  document.getElementById("layoutToggle").addEventListener("change", (e) => {
+    currentLayout = e.target.checked ? "horizontal" : "vertical";
+    buildCard();
+  });
 }
 buildCard();
 window.addEventListener("resize", buildCard);

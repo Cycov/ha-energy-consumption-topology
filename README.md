@@ -1,17 +1,19 @@
 # Energy Consumption Topology
 
-A Home Assistant Lovelace custom card that displays your energy consumption as a **vertical tree topology** with animated power-flow bubbles.
+A Home Assistant Lovelace custom card that displays your energy consumption as a **tree topology** with animated power-flow bubbles.
 
 ![demo screenshot](screenshot.png)
 
 ## Features
 
-- **Vertical tree layout** - root (Grid) at the top, up to 4 child layers below
+- **Vertical or horizontal tree layout** — root at the top/left, up to 4 child layers
 - **Animated bubbles** flowing along Bézier connections, speed proportional to power consumption
-- **Per-node configuration** - custom name, icon, colour, and HA sensor entity
-- **Responsive** - card width stretches to fit the widest layer
-- **Validation** - clear error messages when the YAML config is invalid (duplicate IDs, missing parent, wrong layer, etc.)
-- **HACS-compatible** - one-click install from the Home Assistant Community Store
+- **Per-node configuration** — custom name, icon, colour, and HA sensor entity
+- **"Other" remainder node** — automatically calculates untracked consumption per parent
+- **Responsive** — card width stretches to fit the widest layer
+- **grid_options** — fine-tune card size in HA section-based dashboards
+- **Validation** — clear error messages when the YAML config is invalid (duplicate IDs, missing parent, wrong layer, etc.)
+- **HACS-compatible** — one-click install from the Home Assistant Community Store
 
 ---
 
@@ -53,6 +55,8 @@ Add the card to a dashboard view:
 ```yaml
 type: custom:energy-consumption-topology
 
+layout: vertical          # "vertical" (default) or "horizontal"
+
 bubbles:
   min-speed:
     power-equivalent: 100W
@@ -60,6 +64,10 @@ bubbles:
   max-speed:
     power-equivalent: 5000W
     value: 100%
+
+grid_options:              # optional, for HA section-based dashboards
+  rows: 5
+  columns: 12
 
 root:
   id: grid
@@ -107,21 +115,65 @@ layer2:
     id: light2
     parent: lights
     name: Some light 2
+  - id: lights_other
+    parent: lights
+    name: Untracked lights
+    type: other
 ```
 
 ### Node options
 
 | Option   | Required | Default                          | Description                                   |
 |----------|----------|----------------------------------|-----------------------------------------------|
-| `id`     | **yes**  | -                                | Unique identifier (must not be duplicated)     |
-| `entity` | **yes**  | -                                | Home Assistant `sensor.*` entity ID            |
-| `parent` | **yes*** | -                                | `id` of a node **in the previous layer** (or root for layer0) |
+| `id`     | **yes**  | —                                | Unique identifier (must not be duplicated)     |
+| `entity` | **yes**  | —                                | Home Assistant `sensor.*` entity ID            |
+| `parent` | **yes*** | —                                | `id` of a node **in the previous layer** (or root for layer0) |
 | `name`   | no       | entity name without `sensor.`    | Display label above the node circle           |
 | `icon`   | no       | `mdi:lightning-bolt`             | MDI icon shown inside the circle              |
 | `color`  | no       | assigned in order from palette   | Circle border & bubble colour (cycles through 12 built-in colours) |
-| `type`   | no       | -                                | Set to `light` to auto-switch icon between `mdi:lightbulb-on` (power > 0) and `mdi:lightbulb` (off). A node of type `other` will not require an entity and instead get the value by substracting the sum of it's siblings from the root (WIP) |
+| `type`   | no       | —                                | `"light"` — auto-switch between `mdi:lightbulb-on` / `mdi:lightbulb` based on power.  `"other"` — see below. |
 
-\* `parent` is not used on the `root` node.
+\* `parent` is not used on the `root` node.  
+\* `entity` is not required when `type` is `"other"`.
+
+### The `other` node type
+
+A node with `type: other` does **not** require an `entity`. Its power value is computed automatically as:
+
+$$P_{\text{other}} = P_{\text{parent}} - \sum P_{\text{siblings}}$$
+
+This is useful to show "untracked" or "unmeasured" consumption that makes up the difference between a parent's total and the sum of the individually measured children.
+
+**Rules:**
+
+- Only **one** `other` node is allowed **per parent**. Multiple `other` nodes under different parents in the same layer are fine.
+- The node does **not** need `entity` but must still have a unique `id` and a `parent`.
+- Default icon is `mdi:dots-horizontal`; default name is "Other".
+
+### Layout options
+
+| Option   | Default    | Description                                      |
+|----------|------------|--------------------------------------------------|
+| `layout` | `vertical` | `"vertical"` — root on top, layers below.  `"horizontal"` — root on left, layers to the right. |
+
+### Grid options (section-based dashboards)
+
+When using HA's section-based layout, you can fine-tune the card size:
+
+```yaml
+grid_options:
+  rows: 5
+  columns: 12
+  min_rows: 3
+  min_columns: 6
+```
+
+| Option        | Default     | Description          |
+|---------------|-------------|----------------------|
+| `rows`        | `5`         | Card height in grid rows |
+| `columns`     | `12`        | Card width in grid columns |
+| `min_rows`    | = `rows`    | Minimum height       |
+| `min_columns` | = `columns` | Minimum width        |
 
 ### Bubble speed options
 
@@ -140,6 +192,7 @@ The card shows an error banner if any of the following are violated:
 - `entity` is missing on any node
 - `parent` is missing on any non-root node
 - `parent` references an `id` that does **not** exist in the immediately preceding layer
+- Only **one** `other` node per parent is allowed (but multiple parents can each have one)
 - A maximum of **4 child layers** (`layer0` – `layer3`) is supported; extra keys are ignored
 - Empty layers do not contribute to card height
 
