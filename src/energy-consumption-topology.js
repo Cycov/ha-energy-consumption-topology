@@ -9,10 +9,12 @@ import {
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.5.0";
 const MAX_LAYERS = 4; // layer0 … layer3
 const SVG_CONNECTOR_HEIGHT = 80; // px – height of the bezier zone between rows
-const CIRCLE_RADIUS = 32; // half of the 64px node circle
+const DEFAULT_CIRCLE_SIZE = 64; // px – diameter of the node circle
+const DEFAULT_ICON_SIZE = 22; // px – icon size inside the circle
+const DEFAULT_FONT_SIZE = 0.68; // em – power label font size
 
 const DEFAULT_ICON = "mdi:lightning-bolt";
 const COLOR_PALETTE = [
@@ -207,6 +209,15 @@ class EnergyConsumptionTopology extends LitElement {
       const c = COLOR_PALETTE[colorIndex % COLOR_PALETTE.length];
       colorIndex++;
       return c;
+    };
+
+    /* --- node sizes config --- */
+    const nodesCfg = cfg.nodes || {};
+    const sizesCfg = nodesCfg.sizes || {};
+    this._nodeSizes = {
+      circle: sizesCfg.circle != null ? Number(sizesCfg.circle) : DEFAULT_CIRCLE_SIZE,
+      icon: sizesCfg.icon != null ? Number(sizesCfg.icon) : DEFAULT_ICON_SIZE,
+      font: sizesCfg.font != null ? Number(sizesCfg.font) : DEFAULT_FONT_SIZE,
     };
 
     /* --- bubble config --- */
@@ -444,16 +455,20 @@ class EnergyConsumptionTopology extends LitElement {
     const power = this._formatPower(powerVal);
     const icon = resolveIcon(node, powerVal);
     const hasEntity = !!node.entity;
+    const sz = this._nodeSizes;
+    const circleStyle = `border-color: ${node.color}; width: ${sz.circle}px; height: ${sz.circle}px;`;
+    const iconStyle = `color: ${node.color}; --mdc-icon-size: ${sz.icon}px;`;
+    const fontStyle = `font-size: ${sz.font}em;`;
     return html`
       <div class="node-wrapper">
         ${this._renderNodeName(node)}
         <div
           class="node-circle ${hasEntity ? 'clickable' : ''}"
-          style="border-color: ${node.color};"
+          style="${circleStyle}"
           @click=${hasEntity ? () => this._fireMoreInfo(node.entity) : undefined}
         >
-          <ha-icon .icon=${icon} style="color: ${node.color};"></ha-icon>
-          <span class="node-power">${power}</span>
+          <ha-icon .icon=${icon} style="${iconStyle}"></ha-icon>
+          <span class="node-power" style="${fontStyle}">${power}</span>
         </div>
       </div>
     `;
@@ -466,6 +481,7 @@ class EnergyConsumptionTopology extends LitElement {
   _renderConnectors(parentRow, childRow, pairIndex) {
     const w = this._containerWidth || 400;
     const h = SVG_CONNECTOR_HEIGHT;
+    const circleR = this._nodeSizes.circle / 2;
     const parentCount = parentRow.length;
     const childCount = childRow.length;
     const bc = this._bubbleCfg;
@@ -520,9 +536,8 @@ class EnergyConsumptionTopology extends LitElement {
     return svg`
       <svg
         class="connectors"
-        width="${w}"
-        height="${h}"
         viewBox="0 0 ${w} ${h}"
+        preserveAspectRatio="none"
       >
         ${lines}
       </svg>
@@ -537,7 +552,7 @@ class EnergyConsumptionTopology extends LitElement {
     const w = this._containerWidth || 400;
     const h = this._containerHeight || 400;
     const numCols = allRows.length;
-    const R = CIRCLE_RADIUS;
+    const R = this._nodeSizes.circle / 2;
     const bc = this._bubbleCfg;
 
     const colCx = (colIdx) => ((colIdx + 0.5) / numCols) * w;
@@ -615,14 +630,22 @@ class EnergyConsumptionTopology extends LitElement {
     return css`
       :host {
         display: block;
+        height: 100%;
       }
 
       ha-card {
         overflow: hidden;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
       }
 
       .card-content {
         padding: 16px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: visible;
       }
 
       /* errors */
@@ -643,6 +666,8 @@ class EnergyConsumptionTopology extends LitElement {
         display: flex;
         flex-direction: column;
         align-items: stretch;
+        flex: 1;
+        min-height: 0;
       }
 
       /* topology – horizontal */
@@ -662,7 +687,8 @@ class EnergyConsumptionTopology extends LitElement {
         justify-content: space-around;
         align-items: flex-start;
         gap: 8px;
-        flex-shrink: 0;
+        flex: 0 1 auto;
+        min-height: 0;
       }
 
       /* rows (horizontal) – each "row" is actually a column */
@@ -672,10 +698,13 @@ class EnergyConsumptionTopology extends LitElement {
         align-items: center;
         flex: 1 1 0;
         min-width: 0;
+        min-height: 0;
       }
 
       .topology.horizontal > .row > .node-wrapper {
-        flex: 0 0 auto;
+        flex: 1 1 0;
+        min-height: 0;
+        justify-content: center;
       }
 
       /* node */
@@ -685,6 +714,8 @@ class EnergyConsumptionTopology extends LitElement {
         align-items: center;
         flex: 1 1 0;
         min-width: 0;
+        min-height: 0;
+        overflow: visible;
       }
 
       .node-circle.clickable {
@@ -719,8 +750,6 @@ class EnergyConsumptionTopology extends LitElement {
       }
 
       .node-circle {
-        width: 64px;
-        height: 64px;
         border-radius: 50%;
         border: 2.5px solid;
         display: flex;
@@ -737,12 +766,7 @@ class EnergyConsumptionTopology extends LitElement {
         transition: transform 0.12s ease;
       }
 
-      .node-circle ha-icon {
-        --mdc-icon-size: 22px;
-      }
-
       .node-power {
-        font-size: 0.68em;
         font-weight: 600;
         line-height: 1;
         color: var(--primary-text-color, #e0e0e0);
@@ -752,7 +776,8 @@ class EnergyConsumptionTopology extends LitElement {
       .connectors {
         width: 100%;
         display: block;
-        flex-shrink: 0;
+        flex: 1 1 0;
+        min-height: 0;
       }
 
       /* single overlay SVG for horizontal connectors */

@@ -65,6 +65,12 @@ bubbles:
     power-equivalent: 5000W
     value: 100%
 
+nodes:                     # optional, node appearance
+  sizes:
+    circle: 64             # circle diameter in px (default: 64)
+    icon: 22               # icon size in px (default: 22)
+    font: 0.68             # power label font size in em (default: 0.68)
+
 grid_options:              # optional, for HA section-based dashboards
   rows: 5
   columns: 12
@@ -150,6 +156,24 @@ This is useful to show "untracked" or "unmeasured" consumption that makes up the
 - The node does **not** need `entity` but must still have a unique `id` and a `parent`.
 - Default icon is `mdi:dots-horizontal`; default name is "Other".
 
+### Node options — sizes
+
+All node-sizing settings live under the `nodes:` key.
+
+```yaml
+nodes:
+  sizes:
+    circle: 64            # circle diameter in px (default: 64)
+    icon: 22              # icon size in px (default: 22)
+    font: 0.68            # power label font size in em (default: 0.68)
+```
+
+| Path                  | Default | Description                            |
+|-----------------------|---------|----------------------------------------|
+| `nodes.sizes.circle`  | `64`    | Diameter of the node circle in pixels. |
+| `nodes.sizes.icon`    | `22`    | Size of the MDI icon inside the circle in pixels. |
+| `nodes.sizes.font`    | `0.68`  | Font size of the power label inside the circle in `em` units. |
+
 ### Layout options
 
 | Option   | Default    | Description                                      |
@@ -170,7 +194,7 @@ grid_options:
 
 | Option        | Default     | Description          |
 |---------------|-------------|----------------------|
-| `rows`        | `5`         | Card height in grid rows |
+| `rows`        | `5`         | Card height in grid rows. The card **always fills** the allocated height — nodes and connectors stretch to use all available vertical (or horizontal) space. If there is not enough room, elements may overlap; adjust `rows` or `nodes.sizes.circle` accordingly. |
 | `columns`     | `12`        | Card width in grid columns |
 | `min_rows`    | = `rows`    | Minimum height       |
 | `min_columns` | = `columns` | Minimum width        |
