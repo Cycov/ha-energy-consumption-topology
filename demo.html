@@ -47,12 +47,12 @@
     .node-circle .icon { font-size: 22px; line-height: 1; }
     .node-power { font-size: 0.68em; font-weight: 600; line-height: 1; color: var(--text-primary); }
     .connectors { width: 100%; display: block; flex-shrink: 0; }
-    .connectors-h { display: block; flex-shrink: 0; }
+    .connectors-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
     .info-banner { text-align: center; font-size: .75em; color: var(--text-secondary); margin-top: 20px; opacity: .6; }
 
     /* horizontal layout overrides */
-    .topology.horizontal { flex-direction: row; align-items: stretch; }
-    .topology.horizontal > .row { flex-direction: column; justify-content: space-around; align-items: center; flex-shrink: 0; }
+    .topology.horizontal { flex-direction: row; align-items: stretch; position: relative; }
+    .topology.horizontal > .row { flex-direction: column; justify-content: space-around; align-items: center; flex: 1 1 0; min-width: 0; }
     .topology.horizontal > .row > .node-wrapper { flex: 0 0 auto; }
     .node-name-h { font-size: 0.82em; font-weight: 500; text-align: center; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; color: var(--text-secondary); }
 
@@ -129,7 +129,7 @@ const FAKE = {
 /*  Helpers                                                            */
 /* ================================================================== */
 const SVG_H = 80;
-const SVG_W = 80;
+const CIRCLE_R = 32;
 let currentLayout = "vertical";
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function parsePE(s) { if (typeof s==="number") return s; const v=String(s).trim().toLowerCase(); const n=parseFloat(v); return v.endsWith("kw")?n*1000:n; }
@@ -156,11 +156,16 @@ const BC = {
   maxP: parsePE((bub["max-speed"]||{})["power-equivalent"]||"5000W"),
   minS: parsePct((bub["min-speed"]||{}).value||"10%"),
   maxS: parsePct((bub["max-speed"]||{}).value||"100%"),
+  color: bub.color || "inherit",
+  size: bub.size != null ? Number(bub.size) : 4,
+  qty: bub.quantity != null ? Number(bub.quantity) : 3,
+  baseDur: bub.speed != null ? parseFloat(String(bub.speed)) : 1,
 };
 function powerToSpeed(p) {
   const t = clamp((Math.abs(p)-BC.minP)/(BC.maxP-BC.minP),0,1);
   return BC.minS + t*(BC.maxS-BC.minS);
 }
+function speedToDur(s) { return s<=0 ? 0 : BC.baseDur / s; }
 
 /* ================================================================== */
 /*  Build tree                                                         */
@@ -237,54 +242,65 @@ function renderConnectors(parentRow, childRow, pairIdx) {
     const cy1=h*0.4, cy2=h*0.6;
     const pathId=`p-${pairIdx}-${ci}`;
     const color=pNode.color;
+    const bColor = BC.color==="inherit" ? color : BC.color;
 
     const power = Math.abs(safePower(getNodePower(child)));
     const speed = powerToSpeed(power);
-    const dur = power===0 ? 0 : (8-7*speed);
+    const dur = power===0 ? 0 : speedToDur(speed);
 
     paths+=`<path id="${pathId}" d="M ${x1} 0 C ${x1} ${cy1}, ${x2} ${cy2}, ${x2} ${h}" fill="none" stroke="${color}" stroke-width="1.5" stroke-opacity="0.45"/>`;
     if (dur>0) {
-      for (let b=0;b<3;b++) {
-        const begin=(dur*b*0.33).toFixed(2);
-        paths+=`<circle r="4" fill="${color}" opacity="0.9"><animateMotion dur="${dur.toFixed(2)}s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear" begin="${begin}s"><mpath href="#${pathId}"/></animateMotion></circle>`;
+      for (let b=0;b<BC.qty;b++) {
+        const begin=(dur*b/BC.qty).toFixed(2);
+        paths+=`<circle r="${BC.size}" fill="${bColor}" opacity="0.9"><animateMotion dur="${dur.toFixed(2)}s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear" begin="${begin}s"><mpath href="#${pathId}"/></animateMotion></circle>`;
       }
     }
   }
   return `<svg class="connectors" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths}</svg>`;
 }
 
-function renderHorizontalConnectors(parentRow, childRow, pairIdx, overrideH) {
-  const cardEl = document.getElementById("card");
-  const h = overrideH || (cardEl?(cardEl.clientHeight-64):400);
-  const w = SVG_W;
-  const cy = (i,t) => ((i+0.5)/t)*h;
+function renderHorizontalOverlay(allRows, w, h) {
+  const numCols = allRows.length;
+  const colCx = (ci) => ((ci+0.5)/numCols)*w;
+  const nodeCy = (ni, total) => ((ni+0.5)/total)*h;
 
   let paths = "";
-  for (let ci=0;ci<childRow.length;ci++) {
-    const child = childRow[ci];
-    const pNode = nodeMap.get(child.parent);
-    if (!pNode) continue;
-    const pi = parentRow.indexOf(pNode);
-    if (pi===-1) continue;
+  for (let r=0;r<allRows.length-1;r++) {
+    const parentRow = allRows[r];
+    const childRow = allRows[r+1];
+    const pCenterX = colCx(r);
+    const cCenterX = colCx(r+1);
+    const x1 = pCenterX + CIRCLE_R;
+    const x2 = cCenterX - CIRCLE_R;
+    const midX = (x1+x2)/2;
 
-    const y1=cy(pi,parentRow.length), y2=cy(ci,childRow.length);
-    const cx1=w*0.4, cx2=w*0.6;
-    const pathId=`hp-${pairIdx}-${ci}`;
-    const color=pNode.color;
+    for (let ci=0;ci<childRow.length;ci++) {
+      const child = childRow[ci];
+      const pNode = nodeMap.get(child.parent);
+      if (!pNode) continue;
+      const pi = parentRow.indexOf(pNode);
+      if (pi===-1) continue;
 
-    const power = Math.abs(safePower(getNodePower(child)));
-    const speed = powerToSpeed(power);
-    const dur = power===0 ? 0 : (8-7*speed);
+      const y1 = nodeCy(pi, parentRow.length);
+      const y2 = nodeCy(ci, childRow.length);
 
-    paths+=`<path id="${pathId}" d="M 0 ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${w} ${y2}" fill="none" stroke="${color}" stroke-width="1.5" stroke-opacity="0.45"/>`;
-    if (dur>0) {
-      for (let b=0;b<3;b++) {
-        const begin=(dur*b*0.33).toFixed(2);
-        paths+=`<circle r="4" fill="${color}" opacity="0.9"><animateMotion dur="${dur.toFixed(2)}s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear" begin="${begin}s"><mpath href="#${pathId}"/></animateMotion></circle>`;
+      const pathId = `hp-${r}-${ci}`;
+      const color = pNode.color;
+      const bColor = BC.color==="inherit" ? color : BC.color;
+      const power = Math.abs(safePower(getNodePower(child)));
+      const speed = powerToSpeed(power);
+      const dur = power===0 ? 0 : speedToDur(speed);
+
+      paths+=`<path id="${pathId}" d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="1.5" stroke-opacity="0.45"/>`;
+      if (dur>0) {
+        for (let b=0;b<BC.qty;b++) {
+          const begin=(dur*b/BC.qty).toFixed(2);
+          paths+=`<circle r="${BC.size}" fill="${bColor}" opacity="0.9"><animateMotion dur="${dur.toFixed(2)}s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear" begin="${begin}s"><mpath href="#${pathId}"/></animateMotion></circle>`;
+        }
       }
     }
   }
-  return `<svg class="connectors-h" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths}</svg>`;
+  return `<svg class="connectors-overlay" viewBox="0 0 ${w} ${h}">${paths}</svg>`;
 }
 
 function buildCard() {
@@ -294,29 +310,19 @@ function buildCard() {
   out += `<div class="topology${isH?' horizontal':''}" id="topology">` ;
   for (let r=0;r<allRows.length;r++) {
     out += renderRow(allRows[r], currentLayout);
-    if (r<allRows.length-1) {
-      if (isH) {
-        // placeholder SVG — will re-render after measuring height
-        out += `<svg class="connectors-h" data-pair="${r}"></svg>`;
-      } else {
-        out += renderConnectors(allRows[r],allRows[r+1],r);
-      }
+    if (!isH && r<allRows.length-1) {
+      out += renderConnectors(allRows[r],allRows[r+1],r);
     }
   }
-  out += '</div><div class="info-banner">Energy Consumption Topology v1.3.0 \u2014 standalone demo</div>';
+  out += '</div><div class="info-banner">Energy Consumption Topology v1.4.0 \u2014 standalone demo</div>';
   document.getElementById("card").innerHTML = out;
 
-  // Second pass for horizontal: now the topology has a real height
+  // For horizontal: inject overlay SVG after layout is computed
   if (isH) {
     const topoEl = document.getElementById("topology");
-    const measuredH = topoEl ? topoEl.clientHeight : 400;
-    const placeholders = topoEl.querySelectorAll("svg.connectors-h[data-pair]");
-    placeholders.forEach((svg) => {
-      const pairIdx = parseInt(svg.dataset.pair, 10);
-      const parentRow = allRows[pairIdx];
-      const childRow = allRows[pairIdx + 1];
-      svg.outerHTML = renderHorizontalConnectors(parentRow, childRow, pairIdx, measuredH);
-    });
+    const measuredW = topoEl.clientWidth;
+    const measuredH = topoEl.clientHeight;
+    topoEl.insertAdjacentHTML("beforeend", renderHorizontalOverlay(allRows, measuredW, measuredH));
   }
 
   document.getElementById("layoutToggle").addEventListener("change", (e) => {

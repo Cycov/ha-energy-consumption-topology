@@ -9,10 +9,10 @@ import {
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.4.0";
 const MAX_LAYERS = 4; // layer0 … layer3
 const SVG_CONNECTOR_HEIGHT = 80; // px – height of the bezier zone between rows
-const SVG_CONNECTOR_WIDTH = 80; // px – width of the bezier zone between columns (horizontal mode)
+const CIRCLE_RADIUS = 32; // half of the 64px node circle
 
 const DEFAULT_ICON = "mdi:lightning-bolt";
 const COLOR_PALETTE = [
@@ -48,7 +48,15 @@ function powerToSpeed(power, bubbleCfg) {
   const t = clamp((Math.abs(power) - minP) / (maxP - minP), 0, 1);
   return minS + t * (maxS - minS);
 }
-
+/**
+ * Convert a speed factor (0…1) to an animation duration (seconds).
+ * Uses inverse mapping so the visual difference is truly proportional:
+ * a node at 38% speed moves ~35× faster than one at 1.1%.
+ */
+function speedToDuration(speedFactor, baseDuration) {
+  if (speedFactor <= 0) return 0;
+  return baseDuration / speedFactor;
+}
 function parsePowerEquivalent(str) {
   if (typeof str === "number") return str;
   if (!str) return 0;
@@ -93,12 +101,14 @@ class EnergyConsumptionTopology extends LitElement {
       hass: { attribute: false },
       _config: { state: true },
       _containerWidth: { state: true },
+      _containerHeight: { state: true },
     };
   }
 
   constructor() {
     super();
     this._containerWidth = 0;
+    this._containerHeight = 0;
     this._ro = null;
   }
 
@@ -208,6 +218,10 @@ class EnergyConsumptionTopology extends LitElement {
       maxPower: parsePowerEquivalent(maxSpd["power-equivalent"] || "5000W"),
       minSpeed: parsePercent(minSpd.value || "10%"),
       maxSpeed: parsePercent(maxSpd.value || "100%"),
+      color: bub.color || "inherit",
+      size: bub.size != null ? Number(bub.size) : 4,
+      quantity: bub.quantity != null ? Number(bub.quantity) : 3,
+      baseDuration: bub.speed != null ? parseFloat(String(bub.speed)) : 1,
     };
 
     /* --- root --- */
@@ -390,18 +404,24 @@ class EnergyConsumptionTopology extends LitElement {
     const allRows = [[this._root], ...visibleLayers];
     const isHorizontal = this._layout === "horizontal";
 
+    if (isHorizontal) {
+      const rows = allRows.map((row, r) => this._renderRow(row, r));
+      return html`
+        <div class="topology horizontal">
+          ${rows}
+          ${this._renderHorizontalConnectorOverlay(allRows)}
+        </div>
+      `;
+    }
+
     const parts = [];
     for (let r = 0; r < allRows.length; r++) {
       parts.push(this._renderRow(allRows[r], r));
       if (r < allRows.length - 1) {
-        parts.push(
-          isHorizontal
-            ? this._renderHorizontalConnectors(allRows[r], allRows[r + 1], r)
-            : this._renderConnectors(allRows[r], allRows[r + 1], r)
-        );
+        parts.push(this._renderConnectors(allRows[r], allRows[r + 1], r));
       }
     }
-    return html`<div class="topology ${isHorizontal ? 'horizontal' : ''}">${parts}</div>`;
+    return html`<div class="topology">${parts}</div>`;
   }
 
   _renderRow(nodes, rowIndex) {
@@ -444,23 +464,12 @@ class EnergyConsumptionTopology extends LitElement {
   /* ---------------------------------------------------------------- */
 
   _renderConnectors(parentRow, childRow, pairIndex) {
-    /*
-     * Previous approach used viewBox="0 0 100 100" with
-     * preserveAspectRatio="none", which mapped a *square* coordinate
-     * space onto a wide-and-short rectangle — stretching strokes into
-     * rectangles and circles into ovals.
-     *
-     * Fix: measure the actual pixel width of the container
-     * (via ResizeObserver) and set `viewBox="0 0 <width> <height>"`
-     * so the coordinate system is 1:1 with screen pixels.
-     */
     const w = this._containerWidth || 400;
     const h = SVG_CONNECTOR_HEIGHT;
     const parentCount = parentRow.length;
     const childCount = childRow.length;
+    const bc = this._bubbleCfg;
 
-    /* Centre-x of node `idx` in a row of `total`.
-       Matches CSS `justify-content: space-around`. */
     const cx = (idx, total) => ((idx + 0.5) / total) * w;
 
     const lines = [];
@@ -473,18 +482,18 @@ class EnergyConsumptionTopology extends LitElement {
 
       const x1 = cx(pi, parentCount);
       const x2 = cx(ci, childCount);
-
-      /* Bézier control points – gives a smooth S-curve */
       const cy1 = h * 0.4;
       const cy2 = h * 0.6;
 
       const power = Math.abs(safePower(this._getNodePower(child)));
-      const speed = powerToSpeed(power, this._bubbleCfg);
-      // Duration: speed factor 0.1 → 7.3s (slow), 1.0 → 1s (fast)
-      const duration = power === 0 ? 0 : 8 - 7 * speed;
+      const speed = powerToSpeed(power, bc);
+      const duration = power === 0 ? 0 : speedToDuration(speed, bc.baseDuration);
 
       const pathId = `p${pairIndex}-${ci}`;
       const lineColor = parentNode.color;
+      const bubbleColor = bc.color === "inherit" ? lineColor : bc.color;
+      const bubbleR = bc.size;
+      const qty = bc.quantity;
 
       lines.push(svg`
         <path
@@ -496,27 +505,14 @@ class EnergyConsumptionTopology extends LitElement {
           stroke-opacity="0.45"
         />
         ${duration > 0
-          ? svg`
-            <circle r="4" fill="${lineColor}" opacity="0.9">
-              <animateMotion dur="${duration}s" repeatCount="indefinite"
-                keyPoints="0;1" keyTimes="0;1" calcMode="linear">
-                <mpath href="#${pathId}" />
-              </animateMotion>
-            </circle>
-            <circle r="4" fill="${lineColor}" opacity="0.9">
-              <animateMotion dur="${duration}s" repeatCount="indefinite"
-                keyPoints="0;1" keyTimes="0;1" calcMode="linear"
-                begin="${(duration * 0.33).toFixed(2)}s">
-                <mpath href="#${pathId}" />
-              </animateMotion>
-            </circle>
-            <circle r="4" fill="${lineColor}" opacity="0.9">
-              <animateMotion dur="${duration}s" repeatCount="indefinite"
-                keyPoints="0;1" keyTimes="0;1" calcMode="linear"
-                begin="${(duration * 0.66).toFixed(2)}s">
-                <mpath href="#${pathId}" />
-              </animateMotion>
-            </circle>`
+          ? Array.from({ length: qty }, (_, b) => svg`
+              <circle r="${bubbleR}" fill="${bubbleColor}" opacity="0.9">
+                <animateMotion dur="${duration}s" repeatCount="indefinite"
+                  keyPoints="0;1" keyTimes="0;1" calcMode="linear"
+                  begin="${(duration * b / qty).toFixed(2)}s">
+                  <mpath href="#${pathId}" />
+                </animateMotion>
+              </circle>`)
           : ""}
       `);
     }
@@ -534,79 +530,78 @@ class EnergyConsumptionTopology extends LitElement {
   }
 
   /* ---------------------------------------------------------------- */
-  /*  Horizontal connectors                                           */
+  /*  Horizontal connectors — single overlay SVG                      */
   /* ---------------------------------------------------------------- */
 
-  _renderHorizontalConnectors(parentRow, childRow, pairIndex) {
+  _renderHorizontalConnectorOverlay(allRows) {
+    const w = this._containerWidth || 400;
     const h = this._containerHeight || 400;
-    const w = SVG_CONNECTOR_WIDTH;
-    const parentCount = parentRow.length;
-    const childCount = childRow.length;
+    const numCols = allRows.length;
+    const R = CIRCLE_RADIUS;
+    const bc = this._bubbleCfg;
 
-    /* Centre-y of node idx in a column of `total` items. */
-    const cy = (idx, total) => ((idx + 0.5) / total) * h;
+    const colCx = (colIdx) => ((colIdx + 0.5) / numCols) * w;
+    const nodeCy = (nodeIdx, total) => ((nodeIdx + 0.5) / total) * h;
 
     const lines = [];
-    for (let ci = 0; ci < childCount; ci++) {
-      const child = childRow[ci];
-      const parentNode = this._nodeMap.get(child.parent);
-      if (!parentNode) continue;
-      const pi = parentRow.indexOf(parentNode);
-      if (pi === -1) continue;
+    for (let r = 0; r < allRows.length - 1; r++) {
+      const parentRow = allRows[r];
+      const childRow = allRows[r + 1];
+      const pCenterX = colCx(r);
+      const cCenterX = colCx(r + 1);
 
-      const y1 = cy(pi, parentCount);
-      const y2 = cy(ci, childCount);
+      /* Start at the right edge of the parent circle,
+         end at the left edge of the child circle. */
+      const x1 = pCenterX + R;
+      const x2 = cCenterX - R;
+      const midX = (x1 + x2) / 2;
 
-      const cx1 = w * 0.4;
-      const cx2 = w * 0.6;
+      for (let ci = 0; ci < childRow.length; ci++) {
+        const child = childRow[ci];
+        const parentNode = this._nodeMap.get(child.parent);
+        if (!parentNode) continue;
+        const pi = parentRow.indexOf(parentNode);
+        if (pi === -1) continue;
 
-      const power = Math.abs(safePower(this._getNodePower(child)));
-      const speed = powerToSpeed(power, this._bubbleCfg);
-      const duration = power === 0 ? 0 : 8 - 7 * speed;
+        const y1 = nodeCy(pi, parentRow.length);
+        const y2 = nodeCy(ci, childRow.length);
 
-      const pathId = `hp${pairIndex}-${ci}`;
-      const lineColor = parentNode.color;
+        const power = Math.abs(safePower(this._getNodePower(child)));
+        const speed = powerToSpeed(power, bc);
+        const duration = power === 0 ? 0 : speedToDuration(speed, bc.baseDuration);
 
-      lines.push(svg`
-        <path
-          id="${pathId}"
-          d="M 0 ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${w} ${y2}"
-          fill="none"
-          stroke="${lineColor}"
-          stroke-width="1.5"
-          stroke-opacity="0.45"
-        />
-        ${duration > 0
-          ? svg`
-            <circle r="4" fill="${lineColor}" opacity="0.9">
-              <animateMotion dur="${duration}s" repeatCount="indefinite"
-                keyPoints="0;1" keyTimes="0;1" calcMode="linear">
-                <mpath href="#${pathId}" />
-              </animateMotion>
-            </circle>
-            <circle r="4" fill="${lineColor}" opacity="0.9">
-              <animateMotion dur="${duration}s" repeatCount="indefinite"
-                keyPoints="0;1" keyTimes="0;1" calcMode="linear"
-                begin="${(duration * 0.33).toFixed(2)}s">
-                <mpath href="#${pathId}" />
-              </animateMotion>
-            </circle>
-            <circle r="4" fill="${lineColor}" opacity="0.9">
-              <animateMotion dur="${duration}s" repeatCount="indefinite"
-                keyPoints="0;1" keyTimes="0;1" calcMode="linear"
-                begin="${(duration * 0.66).toFixed(2)}s">
-                <mpath href="#${pathId}" />
-              </animateMotion>
-            </circle>`
-          : ""}
-      `);
+        const pathId = `hp${r}-${ci}`;
+        const lineColor = parentNode.color;
+        const bubbleColor = bc.color === "inherit" ? lineColor : bc.color;
+        const bubbleR = bc.size;
+        const qty = bc.quantity;
+
+        lines.push(svg`
+          <path
+            id="${pathId}"
+            d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}"
+            fill="none"
+            stroke="${lineColor}"
+            stroke-width="1.5"
+            stroke-opacity="0.45"
+          />
+          ${duration > 0
+            ? Array.from({ length: qty }, (_, b) => svg`
+                <circle r="${bubbleR}" fill="${bubbleColor}" opacity="0.9">
+                  <animateMotion dur="${duration}s" repeatCount="indefinite"
+                    keyPoints="0;1" keyTimes="0;1" calcMode="linear"
+                    begin="${(duration * b / qty).toFixed(2)}s">
+                    <mpath href="#${pathId}" />
+                  </animateMotion>
+                </circle>`)
+            : ""}
+        `);
+      }
     }
 
     return svg`
       <svg
-        class="connectors-h"
-        width="${w}"
-        height="${h}"
+        class="connectors-overlay"
         viewBox="0 0 ${w} ${h}"
       >
         ${lines}
@@ -654,6 +649,7 @@ class EnergyConsumptionTopology extends LitElement {
       .topology.horizontal {
         flex-direction: row;
         align-items: stretch;
+        position: relative;
       }
 
       .card-content.horizontal {
@@ -674,7 +670,8 @@ class EnergyConsumptionTopology extends LitElement {
         flex-direction: column;
         justify-content: space-around;
         align-items: center;
-        flex-shrink: 0;
+        flex: 1 1 0;
+        min-width: 0;
       }
 
       .topology.horizontal > .row > .node-wrapper {
@@ -758,10 +755,14 @@ class EnergyConsumptionTopology extends LitElement {
         flex-shrink: 0;
       }
 
-      /* connector SVG between columns (horizontal) */
-      .connectors-h {
-        display: block;
-        flex-shrink: 0;
+      /* single overlay SVG for horizontal connectors */
+      .connectors-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
       }
     `;
   }

@@ -175,14 +175,36 @@ grid_options:
 | `min_rows`    | = `rows`    | Minimum height       |
 | `min_columns` | = `columns` | Minimum width        |
 
-### Bubble speed options
+### Bubble options
 
-| Path                              | Default | Description                                                          |
-|-----------------------------------|---------|----------------------------------------------------------------------|
-| `bubbles.min-speed.power-equivalent` | `100W`  | Power value that maps to the slowest bubble speed                    |
-| `bubbles.min-speed.value`         | `10%`   | Minimum animation speed (percentage of fastest)                      |
-| `bubbles.max-speed.power-equivalent` | `5000W` | Power value that maps to the fastest bubble speed                    |
-| `bubbles.max-speed.value`         | `100%`  | Maximum animation speed                                              |
+All bubble settings live under the `bubbles:` key.
+
+```yaml
+bubbles:
+  color: inherit          # "inherit" (default) = parent node colour, or any CSS colour
+  size: 4                 # bubble radius in pixels (default: 4)
+  quantity: 3             # number of bubbles per connector (default: 3)
+  speed: 1                # animation duration in seconds at 100% speed (default: 1)
+  min-speed:
+    power-equivalent: 100W
+    value: 10%
+  max-speed:
+    power-equivalent: 5000W
+    value: 100%
+```
+
+| Path                              | Default   | Description                                                          |
+|-----------------------------------|-----------|----------------------------------------------------------------------|
+| `bubbles.color`                   | `inherit` | Bubble fill colour. `"inherit"` uses the parent node's colour; any valid CSS colour otherwise. |
+| `bubbles.size`                    | `4`       | Bubble radius in pixels.                                             |
+| `bubbles.quantity`                | `3`       | Number of animated bubbles per connector line.                       |
+| `bubbles.speed`                   | `1`       | Base animation duration (seconds) at 100% speed. Lower = faster. The actual duration for a connector is `speed / speed_factor`, so bubbles slow down inversely with power. |
+| `bubbles.min-speed.power-equivalent` | `100W`  | Power value that maps to the slowest bubble speed.                   |
+| `bubbles.min-speed.value`         | `10%`     | Minimum animation speed (percentage of fastest).                     |
+| `bubbles.max-speed.power-equivalent` | `5000W` | Power value that maps to the fastest bubble speed.                   |
+| `bubbles.max-speed.value`         | `100%`    | Maximum animation speed.                                             |
+
+> **Speed mapping:** the speed factor is linearly interpolated between `min-speed` and `max-speed`. The animation duration is then calculated as `speed / factor`, giving a **true inverse relationship** — a connector carrying 10× more power moves 10× faster.
 
 ### Validation rules
 
