@@ -459,8 +459,9 @@ class EnergyConsumptionTopology extends LitElement {
     const circleStyle = `border-color: ${node.color}; width: ${sz.circle}px; height: ${sz.circle}px;`;
     const iconStyle = `color: ${node.color}; --mdc-icon-size: ${sz.icon}px;`;
     const fontStyle = `font-size: ${sz.font}em;`;
+    const wrapperStyle = `--circle-r: ${sz.circle / 2}px;`;
     return html`
-      <div class="node-wrapper">
+      <div class="node-wrapper" style="${wrapperStyle}">
         ${this._renderNodeName(node)}
         <div
           class="node-circle ${hasEntity ? 'clickable' : ''}"
@@ -537,7 +538,7 @@ class EnergyConsumptionTopology extends LitElement {
       <svg
         class="connectors"
         viewBox="0 0 ${w} ${h}"
-        preserveAspectRatio="none"
+        style="height: ${h}px;"
       >
         ${lines}
       </svg>
@@ -705,6 +706,15 @@ class EnergyConsumptionTopology extends LitElement {
         flex: 1 1 0;
         min-height: 0;
         justify-content: center;
+        position: relative;
+      }
+
+      .topology.horizontal .node-name-h {
+        position: absolute;
+        bottom: calc(50% + var(--circle-r, 32px) + 2px);
+        left: 50%;
+        transform: translateX(-50%);
+        margin: 0;
       }
 
       /* node */
@@ -776,8 +786,7 @@ class EnergyConsumptionTopology extends LitElement {
       .connectors {
         width: 100%;
         display: block;
-        flex: 1 1 0;
-        min-height: 0;
+        flex-shrink: 0;
       }
 
       /* single overlay SVG for horizontal connectors */
